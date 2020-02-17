@@ -322,7 +322,6 @@ class GtTraceTool(GtTraceBase,GtMapToolEmitPoint):
             self.rubberBandLine.reset(QgsWkbTypes.LineGeometry)
             self.rubberBand.reset(QgsWkbTypes.PointGeometry)
     def delete_control_points(self):
-        #
         if self.rubberBand:
             self.rubberBand.reset(QgsWkbTypes.PointGeometry)
         self.trace.remove_control_points()
@@ -423,7 +422,7 @@ class GtTraceTool(GtTraceBase,GtMapToolEmitPoint):
         #self.deactivatedt.emit()
         #slight bug when this signal is allowed to 
         #emit we get a recursive error TODO debug
-        #manage the memory
+
     #    self.emit(SIGNAL("deactivated()"))
 class GtBatchTrace(GtTraceBase):
     def __init__(self, canvas,target,iface,cost,controlpoints,fieldname):
@@ -436,7 +435,9 @@ class GtBatchTrace(GtTraceBase):
         self.iface = iface
     def runBatchTrace(self):
         points = []
-        idx = self.controlpoints.fieldNameIndex(self.fieldname)
+        # https://gis.stackexchange.com/questions/279934/attributeerror-qgsvectorlayer-object-has-no-attribute-fieldnameindex
+        # idx = self.controlpoints.fieldNameIndex(self.fieldname)
+        idx = self.controlpoints.dataProvider().fieldNameIndex(self.fieldname)
         values = self.controlpoints.uniqueValues(idx)
         self.addField(self.fieldname,QVariant.String,self.target)
         for f in self.controlpoints.getFeatures():
@@ -473,35 +474,22 @@ class GtBatchTrace(GtTraceBase):
             self.addLine(v)
             self.trace.remove_control_points()
 
-        return true
+        return True
 class CostCalculator():
     def __init__(self,layer):
         self.layer = layer
-        self.bands = self.layer.bandCount()
     def layer_to_numpy(self,layer):
-        #somewhat ram hungry 
         filepath = layer.dataProvider().dataSourceUri()
         ds = gdal.Open(filepath)
         self.transform = ds.GetGeoTransform()
         self.wkt = ds.GetProjection()
         if ds == None:
             return
-        arrays = []
+        self.arrays = []
         for i in range(self.layer.bandCount()):
             array = np.array(ds.GetRasterBand(i+1).ReadAsArray()).astype('int')
             self.arrays.append(np.rot90(array,3))
-        return arrays
-    def layer_band_to_numpy(self,layer,band=0):
-        filepath = layer.dataProvider().dataSourceUri()
-        ds = gdal.Open(filepath)
-        self.transform = ds.GetGeoTransform()
-        self.wkt = ds.GetProjection()
-        if ds == None:
-            return False
-        if band < self.layer.bandCount():
-            array = np.array(ds.GetRasterBand(band+1).ReadAsArray()).astype('int')
-            return np.rot90(array,3)
-        return False 
+        return self.arrays
     def numpy_to_layer(self,array,name):
         array = np.rot90(array)
         sy, sx = array.shape
@@ -550,10 +538,13 @@ class CostCalculator():
             self.numpy_to_layer(array,name) 
             return            
     def calc_darkness(self):
-        cost = self.layer_band_to_numpy(self.layer,0)
-        cost += self.layer_band_to_numpy(self.layer,1)
-        cost += self.layer_band_to_numpy(self.layer,2)
-        #cost /= float(arr_len)
+        self.layer_to_numpy(self.layer)
+        cost=np.array(self.arrays[0],dtype='float')
+        cost.fill(0)
+        for i in range(len(self.arrays)):
+            cost+=self.arrays[i]
+        arr_len = len(self.arrays)
+        cost /= float(arr_len)
         return cost
         ##print cost.shape
  
